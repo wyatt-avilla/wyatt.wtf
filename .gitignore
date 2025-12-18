@@ -27,3 +27,5 @@ target
 
 # Nix
 result
+
+.sass-cache/

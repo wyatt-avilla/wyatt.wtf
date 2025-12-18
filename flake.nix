@@ -23,6 +23,7 @@
               "clippy"
               "rust-src"
             ];
+            targets = [ "wasm32-unknown-unknown" ];
           })
         ];
       in
@@ -36,6 +37,9 @@
                 ++ (with pkgs; [
                   gcc
                   rust-analyzer
+                  cargo-leptos
+                  wasm-bindgen-cli
+                  sass
                 ]);
             };
           in
