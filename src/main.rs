@@ -1,17 +1,16 @@
 #![warn(clippy::pedantic)]
 
+use axum::Router;
+use leptos::logging::log;
+use leptos::prelude::*;
+use leptos_axum::{generate_route_list, LeptosRoutes};
+use wyattwtf::app::{shell, App};
+
 #[tokio::main]
 async fn main() {
-    use axum::Router;
-    use leptos::logging::log;
-    use leptos::prelude::*;
-    use leptos_axum::{generate_route_list, LeptosRoutes};
-    use wyattwtf::app::{shell, App};
-
-    let conf = get_configuration(None).unwrap();
-    let addr = conf.leptos_options.site_addr;
-    let leptos_options = conf.leptos_options;
-    // Generate the list of routes in your Leptos App
+    let toml_conf = get_configuration(None).unwrap();
+    let addr = toml_conf.leptos_options.site_addr;
+    let leptos_options = toml_conf.leptos_options;
     let routes = generate_route_list(App);
 
     let app = Router::new()
@@ -22,8 +21,6 @@ async fn main() {
         .fallback(leptos_axum::file_and_error_handler(shell))
         .with_state(leptos_options);
 
-    // run our app with hyper
-    // `axum::Server` is a re-export of `hyper::Server`
     log!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app.into_make_service())
