@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 wasm-bindgen = { version = "=0.2.105", optional = true }
 
 [features]
+default = ["ssr"]
 hydrate = [
     "leptos/hydrate",
     "dep:console_error_panic_hook",
