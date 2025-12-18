@@ -17,6 +17,13 @@
           overlays = [ (import inputs.rust-overlay) ];
         };
 
+        nativeBuildInputs = with pkgs; [
+          cargo-leptos
+          binaryen
+          wasm-bindgen-cli
+          dart-sass
+        ];
+
         rustBin = with pkgs; [
           (rust-bin.stable.latest.default.override {
             extensions = [
@@ -34,12 +41,10 @@
               name = "rust-development-shell";
               nativeBuildInputs =
                 rustBin
+                ++ nativeBuildInputs
                 ++ (with pkgs; [
                   gcc
                   rust-analyzer
-                  cargo-leptos
-                  wasm-bindgen-cli
-                  sass
                 ]);
             };
           in
@@ -48,19 +53,40 @@
             default = rustShell;
           };
 
-        packages.default =
-          let
-            cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-          in
-          pkgs.rustPlatform.buildRustPackage {
-            pname = cargoToml.package.name;
-            inherit (cargoToml.package) version;
+        packages = {
+          default =
+            let
+              cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+              leptosApp = pkgs.rustPlatform.buildRustPackage {
+                pname = cargoToml.package.name;
+                inherit (cargoToml.package) version;
+                src = ./.;
 
-            src = ./.;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-            };
-          };
+                cargoLock = {
+                  lockFile = ./Cargo.lock;
+                };
+
+                nativeBuildInputs = nativeBuildInputs ++ (with pkgs; [ lld ]);
+
+                buildPhase = ''
+                  export HOME=$(mktemp -d)
+                  cargo leptos build --release
+                '';
+
+                installPhase = ''
+                  mkdir -p $out/bin $out/share
+                  cp target/release/${cargoToml.package.name} $out/bin/
+                  cp -r target/site $out/share/
+                '';
+
+                doCheck = false;
+              };
+            in
+            pkgs.writeShellScriptBin "leptos-app-wrapped" ''
+              export LEPTOS_SITE_ROOT=${leptosApp}/share/site
+              exec ${leptosApp}/bin/${cargoToml.package.name} "$@"
+            '';
+        };
 
         checks =
           let
