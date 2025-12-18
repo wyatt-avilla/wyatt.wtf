@@ -35,8 +35,7 @@ pub fn App() -> impl IntoView {
         // id=leptos means cargo-leptos will hot-reload this stylesheet
         <Stylesheet id="leptos" href="/pkg/wyattwtf.css"/>
 
-        // sets the document title
-        <Title text="Tab Title Here"/>
+        <Title text="wyatt.wtf"/>
 
         // content for this welcome page
         <Router>
