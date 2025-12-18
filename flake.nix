@@ -9,7 +9,12 @@
 
   outputs =
     { self, nixpkgs, ... }@inputs:
-    inputs.flake-utils.lib.eachDefaultSystem (
+    {
+      nixosModules = {
+        wyattwtf = import ./service.nix { inherit self; };
+      };
+    }
+    // inputs.flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs {
@@ -82,7 +87,7 @@
                 doCheck = false;
               };
             in
-            pkgs.writeShellScriptBin "leptos-app-wrapped" ''
+            pkgs.writeShellScriptBin "${cargoToml.package.name}-${cargoToml.package.version}" ''
               export LEPTOS_SITE_ROOT=${leptosApp}/share/site
               exec ${leptosApp}/bin/${cargoToml.package.name} "$@"
             '';
