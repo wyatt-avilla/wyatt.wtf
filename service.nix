@@ -13,6 +13,12 @@ with lib;
 {
   options.services.wyattwtf = {
     enable = mkEnableOption description;
+
+    port = mkOption {
+      type = types.int;
+      default = 8080;
+      description = "Port for the wyattwtf service to listen on.";
+    };
   };
 
   config = mkIf config.services.wyattwtf.enable {
@@ -30,6 +36,10 @@ with lib;
         StartLimitBurst = 1;
         User = "wyattwtf";
         Group = "wyattwtf";
+      };
+
+      environment = {
+        LEPTOS_SITE_ADDR = "127.0.0.1:${toString config.services.wyattwtf.port}";
       };
     };
 
