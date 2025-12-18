@@ -1,3 +1,5 @@
+#![allow(clippy::must_use_candidate)]
+
 use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
 use leptos_router::{
@@ -34,7 +36,7 @@ pub fn App() -> impl IntoView {
         <Stylesheet id="leptos" href="/pkg/wyattwtf.css"/>
 
         // sets the document title
-        <Title text="Welcome to Leptos"/>
+        <Title text="Tab Title Here"/>
 
         // content for this welcome page
         <Router>
@@ -55,7 +57,7 @@ fn HomePage() -> impl IntoView {
     let on_click = move |_| *count.write() += 1;
 
     view! {
-        <h1>"Welcome to Leptos!"</h1>
+        <h1>"under construction rn"</h1>
         <button on:click=on_click>"Click Me: " {count}</button>
     }
 }
