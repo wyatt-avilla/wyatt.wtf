@@ -53,5 +53,6 @@ pub fn App() -> impl IntoView {
 fn HomePage() -> impl IntoView {
     view! {
         <h1>"under construction rn"</h1>
+        <p>"check back later :)"</p>
     }
 }
