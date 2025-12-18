@@ -1,15 +1,86 @@
 {
-  description = "Rust dev env";
+  description = "A flake for Rust development";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixpkgs-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs =
-    { self, nixpkgs }:
-    {
-      packages.x86_64-linux.hello = nixpkgs.legacyPackages.x86_64-linux.hello;
+    { self, nixpkgs, ... }@inputs:
+    inputs.flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import inputs.rust-overlay) ];
+        };
 
-      packages.x86_64-linux.default = self.packages.x86_64-linux.hello;
-    };
+        rustBin = with pkgs; [
+          (rust-bin.stable.latest.default.override {
+            extensions = [
+              "clippy"
+              "rust-src"
+            ];
+          })
+        ];
+      in
+      {
+        devShells =
+          let
+            rustShell = pkgs.mkShell {
+              name = "rust-development-shell";
+              nativeBuildInputs =
+                rustBin
+                ++ (with pkgs; [
+                  gcc
+                  rust-analyzer
+                ]);
+            };
+          in
+          {
+            rust = rustShell;
+            default = rustShell;
+          };
+
+        packages.default =
+          let
+            cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+          in
+          pkgs.rustPlatform.buildRustPackage {
+            pname = cargoToml.package.name;
+            inherit (cargoToml.package) version;
+
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
+          };
+
+        checks =
+          let
+            mkCheck =
+              {
+                name,
+                cmds,
+                src ? self,
+                inputs ? [ ],
+              }:
+              pkgs.runCommand name { buildInputs = inputs; } ''
+                cd ${src}
+                ${pkgs.lib.strings.concatLines cmds}
+                touch $out
+              '';
+
+            checkArgs = {
+              rustFormatting = {
+                inputs = rustBin;
+                cmds = [ "cargo fmt --check" ];
+              };
+            };
+          in
+          builtins.mapAttrs (name: args: mkCheck (args // { inherit name; })) checkArgs;
+      }
+    );
 }
