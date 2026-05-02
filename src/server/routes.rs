@@ -32,6 +32,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[must_use]
     pub fn new(config: ServerConfig) -> Self {
         Self {
             config: Arc::new(config),
@@ -370,7 +371,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result.stale, false);
+        assert!(!result.stale);
         assert_eq!(result.items, vec![1, 2, 3]);
     }
 
@@ -387,7 +388,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result.stale, true);
+        assert!(result.stale);
         assert_eq!(result.items, vec![1, 2, 3]);
         assert!(result.error.is_some());
     }

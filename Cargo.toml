@@ -3,6 +3,10 @@ name = "wyattwtf"
 version = "0.1.0"
 edition = "2021"
 
+[lints.clippy]
+missing_errors_doc = "allow"
+pedantic = { level = "warn", priority = -1 }
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

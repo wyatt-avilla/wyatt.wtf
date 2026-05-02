@@ -36,7 +36,7 @@ pub fn parse_lastfm(body: &str) -> Result<Vec<LastfmTrack>> {
         .recenttracks
         .track
         .into_iter()
-        .filter_map(LastfmTrack::try_from)
+        .map(LastfmTrack::from_api)
         .collect())
 }
 
@@ -86,7 +86,7 @@ struct LastfmAttrs {
 }
 
 impl LastfmTrack {
-    fn try_from(track: LastfmApiTrack) -> Option<Self> {
+    fn from_api(track: LastfmApiTrack) -> Self {
         let now_playing = track
             .attr
             .and_then(|attr| attr.nowplaying)
@@ -104,12 +104,13 @@ impl LastfmTrack {
             .rev()
             .map(|image| image.text)
             .find(|url| !url.is_empty());
-        let id_time = played_at
-            .map(|time| time.timestamp().to_string())
-            .unwrap_or_else(|| "now-playing".to_string());
+        let id_time = played_at.map_or_else(
+            || "now-playing".to_string(),
+            |time| time.timestamp().to_string(),
+        );
         let id = format!("lastfm:{id_time}:{}:{}", track.artist.text, track.name);
 
-        Some(Self {
+        Self {
             id,
             title: track.name,
             artist: track.artist.text,
@@ -120,7 +121,7 @@ impl LastfmTrack {
             now_playing,
             artist_mbid,
             album_mbid,
-        })
+        }
     }
 }
 
@@ -162,7 +163,7 @@ mod tests {
         let items = parse_lastfm(json).unwrap();
 
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].now_playing, true);
+        assert!(items[0].now_playing);
         assert_eq!(items[0].played_at, None);
         assert_eq!(
             items[0].album_art_url.as_deref(),

@@ -1,3 +1,6 @@
+#![cfg_attr(test, warn(clippy::pedantic))]
+#![cfg_attr(test, allow(clippy::missing_errors_doc))]
+
 pub mod app;
 pub mod models;
 

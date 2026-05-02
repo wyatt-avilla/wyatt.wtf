@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(items[0].title, "Perfect Blue");
         assert_eq!(items[0].year, Some(1997));
         assert_eq!(items[0].rating, Some(5.0));
-        assert_eq!(items[0].rewatch, true);
+        assert!(items[0].rewatch);
         assert_eq!(
             items[0].poster_url.as_deref(),
             Some("https://example.com/poster.jpg")
