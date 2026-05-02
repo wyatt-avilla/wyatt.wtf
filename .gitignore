@@ -29,3 +29,7 @@ target
 result
 
 .sass-cache/
+
+# Env
+.env
+.envrc
