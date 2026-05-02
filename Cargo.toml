@@ -10,11 +10,23 @@ crate-type = ["cdylib", "rlib"]
 leptos = { version = "0.8.0" }
 leptos_router = { version = "0.8.0" }
 axum = { version = "0.8.0", optional = true }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"], optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 leptos_axum = { version = "0.8.0", optional = true }
 leptos_meta = { version = "0.8.0" }
-tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+roxmltree = { version = "0.20", optional = true }
+scraper = { version = "0.22", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"], optional = true }
+url = { version = "2", optional = true }
 wasm-bindgen = { version = "=0.2.105", optional = true }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 
 [features]
 default = ["ssr"]
@@ -25,7 +37,14 @@ hydrate = [
 ]
 ssr = [
     "dep:axum",
+    "dep:clap",
+    "dep:reqwest",
+    "dep:roxmltree",
+    "dep:scraper",
+    "dep:serde_json",
+    "dep:thiserror",
     "dep:tokio",
+    "dep:url",
     "dep:leptos_axum",
     "leptos/ssr",
     "leptos_meta/ssr",

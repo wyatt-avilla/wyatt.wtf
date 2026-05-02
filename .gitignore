@@ -33,3 +33,7 @@ result
 # Env
 .env
 .envrc
+
+# Local files
+*.local.*
+*.local
