@@ -103,7 +103,7 @@
 
             buildPhase = ''
               export HOME=$(mktemp -d)
-              cargo leptos build --release
+              cargo leptos build --release --precompress
             '';
 
             installPhase = ''
