@@ -1,17 +1,17 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use axum::{
+    Json, Router,
     extract::{Query, State},
     routing::get,
-    Json, Router,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::models::{
-    Activity, ActivityDetails, ActivityFeed, GoodreadsBookUpdate, LastfmTrack, LetterboxdWatch,
-    Source, SourceFailure, DEFAULT_ACTIVITY_LIMIT,
+    Activity, ActivityDetails, ActivityFeed, DEFAULT_ACTIVITY_LIMIT, GoodreadsBookUpdate,
+    LastfmTrack, LetterboxdWatch, Source, SourceFailure,
 };
 
 use super::{

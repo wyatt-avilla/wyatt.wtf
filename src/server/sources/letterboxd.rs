@@ -173,7 +173,9 @@ mod tests {
         assert!(items[0].rewatch);
         assert_eq!(
             items[0].poster_url.as_deref(),
-            Some("https://a.ltrbxd.com/resized/film-poster/4/6/1/7/5/46175-perfect-blue-0-150-0-225-crop.jpg?v=1ed5878cce")
+            Some(
+                "https://a.ltrbxd.com/resized/film-poster/4/6/1/7/5/46175-perfect-blue-0-150-0-225-crop.jpg?v=1ed5878cce"
+            )
         );
     }
 

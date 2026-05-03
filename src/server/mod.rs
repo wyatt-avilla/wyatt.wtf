@@ -4,4 +4,4 @@ mod routes;
 mod sources;
 
 pub use config::{Cli, ServerConfig};
-pub use routes::{api_router, AppState};
+pub use routes::{AppState, api_router};

@@ -5,10 +5,10 @@ use axum::Router;
 use clap::Parser;
 use leptos::logging::log;
 use leptos::prelude::*;
-use leptos_axum::{generate_route_list, LeptosRoutes};
+use leptos_axum::{LeptosRoutes, generate_route_list};
 use wyattwtf::{
-    app::{shell, App},
-    server::{api_router, AppState, Cli, ServerConfig},
+    app::{App, shell},
+    server::{AppState, Cli, ServerConfig, api_router},
 };
 
 #[tokio::main]

@@ -4,13 +4,13 @@ mod details;
 
 use details::activity_detail_lines;
 use leptos::prelude::*;
-use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
+use leptos_meta::{MetaTags, Stylesheet, Title, provide_meta_context};
 use leptos_router::{
-    components::{Route, Router, Routes},
     StaticSegment,
+    components::{Route, Router, Routes},
 };
 
-use crate::models::{Activity, ActivityDetails, ActivityFeed, Source, DEFAULT_ACTIVITY_LIMIT};
+use crate::models::{Activity, ActivityDetails, ActivityFeed, DEFAULT_ACTIVITY_LIMIT, Source};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
