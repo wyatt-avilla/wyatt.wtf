@@ -17,14 +17,14 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <meta charset="utf-8"/>
-                <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <AutoReload options=options.clone() />
-                <HydrationScripts options/>
-                <MetaTags/>
+                <HydrationScripts options />
+                <MetaTags />
             </head>
             <body>
-                <App/>
+                <App />
             </body>
         </html>
     }
@@ -38,14 +38,14 @@ pub fn App() -> impl IntoView {
     view! {
         // injects a stylesheet into the document <head>
         // id=leptos means cargo-leptos will hot-reload this stylesheet
-        <Stylesheet id="leptos" href="/pkg/wyattwtf.css"/>
+        <Stylesheet id="leptos" href="/pkg/wyattwtf.css" />
 
-        <Title text="wyatt.wtf"/>
+        <Title text="wyatt.wtf" />
 
         <Router>
             <main>
                 <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=HomePage/>
+                    <Route path=StaticSegment("") view=HomePage />
                 </Routes>
             </main>
         </Router>
@@ -81,19 +81,25 @@ fn HomePage() -> impl IntoView {
                 <p>"recent movies, books, and music"</p>
             </header>
 
-            <Suspense fallback=|| view! { <p class="feed-status">"Loading feed..."</p> }>
+            <Suspense fallback=|| {
+                view! { <p class="feed-status">"Loading feed..."</p> }
+            }>
                 {move || {
-                    feed.get().map_or_else(
-                        || view! { <p class="feed-status">"Loading feed..."</p> }.into_any(),
-                        |result| match result {
-                            Ok(feed) => view! { <ActivityFeedView feed/> }.into_any(),
-                            Err(err) => view! {
-                                <p class="feed-status feed-status--error">
-                                    "Could not load the activity feed: " {err.to_string()}
-                                </p>
-                            }.into_any(),
-                        },
-                    )
+                    feed.get()
+                        .map_or_else(
+                            || view! { <p class="feed-status">"Loading feed..."</p> }.into_any(),
+                            |result| match result {
+                                Ok(feed) => view! { <ActivityFeedView feed /> }.into_any(),
+                                Err(err) => {
+                                    view! {
+                                        <p class="feed-status feed-status--error">
+                                            "Could not load the activity feed: " {err.to_string()}
+                                        </p>
+                                    }
+                                        .into_any()
+                                }
+                            },
+                        )
                 }}
             </Suspense>
         </section>
@@ -119,13 +125,9 @@ fn ActivityFeedView(feed: ActivityFeed) -> impl IntoView {
     };
 
     view! {
-        {(!status.is_empty()).then(|| view! {
-            <p class="feed-status">{status}</p>
-        })}
-        <SourceFilterControls filters=source_filters set_filters=set_source_filters/>
-        {feed_is_empty.then(|| view! {
-            <p class="feed-status">"No activity found."</p>
-        })}
+        {(!status.is_empty()).then(|| view! { <p class="feed-status">{status}</p> })}
+        <SourceFilterControls filters=source_filters set_filters=set_source_filters />
+        {feed_is_empty.then(|| view! { <p class="feed-status">"No activity found."</p> })}
         <p class="feed-status" hidden=move || !source_selection_is_empty()>
             "No activity found for the selected sources."
         </p>
@@ -133,7 +135,7 @@ fn ActivityFeedView(feed: ActivityFeed) -> impl IntoView {
             <For
                 each=visible_items
                 key=|activity| activity.id.clone()
-                children=|activity| view! { <ActivityItem activity/> }
+                children=|activity| view! { <ActivityItem activity /> }
             />
         </ol>
     }
@@ -187,9 +189,9 @@ fn SourceFilterControls(
 ) -> impl IntoView {
     view! {
         <fieldset class="source-filters" aria-label="Activity source filters">
-            <SourceFilterOption source=Source::Lastfm filters set_filters/>
-            <SourceFilterOption source=Source::Goodreads filters set_filters/>
-            <SourceFilterOption source=Source::Letterboxd filters set_filters/>
+            <SourceFilterOption source=Source::Lastfm filters set_filters />
+            <SourceFilterOption source=Source::Goodreads filters set_filters />
+            <SourceFilterOption source=Source::Letterboxd filters set_filters />
         </fieldset>
     }
 }
@@ -224,23 +226,22 @@ fn ActivityItem(activity: Activity) -> impl IntoView {
     let detail = activity_detail(&activity.details);
     let image = activity.image_url.clone().map_or_else(
         || view! { <div class="activity-image activity-image--empty"></div> }.into_any(),
-        |url| {
-            view! {
-                <img class="activity-image" src=url alt="" loading="lazy"/>
-            }
-            .into_any()
-        },
+        |url| view! { <img class="activity-image" src=url alt="" loading="lazy" /> }.into_any(),
     );
 
     view! {
         <li class="activity-item">
-            {image}
-            <div class="activity-content">
+            {image} <div class="activity-content">
                 <div class="activity-meta">
                     <span>{source}</span>
                     <time datetime=activity.occurred_at.to_rfc3339()>{timestamp}</time>
                 </div>
-                <a class="activity-title" href=activity.external_url target="_blank" rel="noreferrer">
+                <a
+                    class="activity-title"
+                    href=activity.external_url
+                    target="_blank"
+                    rel="noreferrer"
+                >
                     {activity.title}
                 </a>
                 <p class="activity-detail">{detail}</p>
