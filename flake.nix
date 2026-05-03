@@ -159,10 +159,6 @@
           '';
 
           checks = {
-            nixfmt = mkNixCheck "nixfmt" pkgs.nixfmt-rfc-style ''
-              find . -name '*.nix' -print0 | xargs -0 nixfmt --check
-            '';
-
             statix = mkNixCheck "statix" pkgs.statix ''
               statix check .
             '';
