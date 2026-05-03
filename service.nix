@@ -25,9 +25,9 @@ with lib;
       description = "Path to a file containing the Last.fm API key.";
     };
 
-    goodreadsRssUrl = mkOption {
+    goodreadsRssUrlPath = mkOption {
       type = types.str;
-      description = "Goodreads updates RSS URL.";
+      description = "Path to a file containing the Goodreads updates RSS URL.";
     };
 
     lastfmUsername = mkOption {
@@ -40,6 +40,12 @@ with lib;
       type = types.str;
       default = "https://letterboxd.com/wyattwtf/rss/";
       description = "Letterboxd RSS URL.";
+    };
+
+    upstreamTimeoutSeconds = mkOption {
+      type = types.ints.positive;
+      default = 10;
+      description = "Total timeout, in seconds, for upstream feed requests.";
     };
   };
 
@@ -58,8 +64,10 @@ with lib;
           config.services.wyattwtf.lastfmUsername
           "--letterboxd-rss-url"
           config.services.wyattwtf.letterboxdRssUrl
-          "--goodreads-rss-url"
-          config.services.wyattwtf.goodreadsRssUrl
+          "--goodreads-rss-url-path"
+          config.services.wyattwtf.goodreadsRssUrlPath
+          "--upstream-timeout-seconds"
+          (toString config.services.wyattwtf.upstreamTimeoutSeconds)
         ];
         StateDirectory = "wyattwtf";
         StateDirectoryMode = "0700";

@@ -33,13 +33,17 @@ pub struct AppState {
 }
 
 impl AppState {
-    #[must_use]
-    pub fn new(config: ServerConfig) -> Self {
-        Self {
+    pub fn new(config: ServerConfig) -> Result<Self> {
+        let client = reqwest::Client::builder()
+            .timeout(config.upstream_timeout)
+            .build()
+            .map_err(BackendError::ClientBuild)?;
+
+        Ok(Self {
             config: Arc::new(config),
-            client: reqwest::Client::new(),
+            client,
             cache: Arc::new(ActivityCache::default()),
-        }
+        })
     }
 }
 
@@ -159,7 +163,7 @@ impl AppState {
             }
             Err(err) => errors.push(SourceFailure {
                 source: Source::Letterboxd,
-                message: err.to_string(),
+                message: err.public_message(),
             }),
         }
 
@@ -176,7 +180,7 @@ impl AppState {
             }
             Err(err) => errors.push(SourceFailure {
                 source: Source::Goodreads,
-                message: err.to_string(),
+                message: err.public_message(),
             }),
         }
 
@@ -198,7 +202,7 @@ impl AppState {
             }
             Err(err) => errors.push(SourceFailure {
                 source: Source::Lastfm,
-                message: err.to_string(),
+                message: err.public_message(),
             }),
         }
 
@@ -280,12 +284,12 @@ where
                 return Ok(CachedResult {
                     fetched_at: cached.fetched_at,
                     stale: true,
-                    error: Some(err.to_string()),
+                    error: Some(err.public_message()),
                     items: cached.items,
                 });
             }
 
-            Err(BackendError::NoCachedData(err.to_string()))
+            Err(BackendError::NoCachedData)
         }
     }
 }
@@ -381,7 +385,10 @@ mod tests {
 
         assert!(result.stale);
         assert_eq!(result.items, vec![1, 2, 3]);
-        assert!(result.error.is_some());
+        assert_eq!(
+            result.error.as_deref(),
+            Some("upstream response could not be parsed")
+        );
     }
 
     #[test]

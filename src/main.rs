@@ -14,12 +14,12 @@ use wyattwtf::{
 #[tokio::main]
 async fn main() {
     let server_config =
-        ServerConfig::from_cli(Cli::parse()).expect("failed to load server configuration");
+        ServerConfig::try_from(Cli::parse()).expect("failed to load server configuration");
     let toml_conf = get_configuration(None).unwrap();
     let addr = toml_conf.leptos_options.site_addr;
     let leptos_options = toml_conf.leptos_options;
     let routes = generate_route_list(App);
-    let app_state = AppState::new(server_config);
+    let app_state = AppState::new(server_config).expect("failed to build application state");
 
     let leptos_app = Router::new()
         .leptos_routes_with_context(
