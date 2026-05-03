@@ -6,6 +6,7 @@
   ...
 }:
 let
+  cfg = config.services.wyattwtf;
   bin = lib.getExe self.packages.${pkgs.system}.default;
   description = "wyatt.wtf webservice";
 in
@@ -18,6 +19,28 @@ with lib;
       type = types.int;
       default = 8080;
       description = "Port for the wyattwtf service to listen on.";
+    };
+
+    user = mkOption {
+      type = types.str;
+      default = "wyattwtf";
+      description = ''
+        User account under which the wyattwtf service runs.
+
+        The default user is created by this module. If you set this to another
+        value, define the user elsewhere in your NixOS configuration.
+      '';
+    };
+
+    group = mkOption {
+      type = types.str;
+      default = "wyattwtf";
+      description = ''
+        Group under which the wyattwtf service runs.
+
+        The default group is created by this module. If you set this to another
+        value, define the group elsewhere in your NixOS configuration.
+      '';
     };
 
     lastfmApiKeyPath = mkOption {
@@ -49,7 +72,7 @@ with lib;
     };
   };
 
-  config = mkIf config.services.wyattwtf.enable {
+  config = mkIf cfg.enable {
     systemd.services.wyattwtf = {
       inherit description;
       after = [ "network.target" ];
@@ -59,35 +82,37 @@ with lib;
         ExecStart = lib.escapeShellArgs [
           "${bin}"
           "--lastfm-api-key-path"
-          config.services.wyattwtf.lastfmApiKeyPath
+          cfg.lastfmApiKeyPath
           "--lastfm-username"
-          config.services.wyattwtf.lastfmUsername
+          cfg.lastfmUsername
           "--letterboxd-rss-url"
-          config.services.wyattwtf.letterboxdRssUrl
+          cfg.letterboxdRssUrl
           "--goodreads-rss-url-path"
-          config.services.wyattwtf.goodreadsRssUrlPath
+          cfg.goodreadsRssUrlPath
           "--upstream-timeout-seconds"
-          (toString config.services.wyattwtf.upstreamTimeoutSeconds)
+          (toString cfg.upstreamTimeoutSeconds)
         ];
         StateDirectory = "wyattwtf";
         StateDirectoryMode = "0700";
         Restart = "always";
         RestartSec = "5min";
         StartLimitBurst = 1;
-        User = "wyattwtf";
-        Group = "wyattwtf";
+        User = cfg.user;
+        Group = cfg.group;
       };
 
       environment = {
-        LEPTOS_SITE_ADDR = "127.0.0.1:${toString config.services.wyattwtf.port}";
+        LEPTOS_SITE_ADDR = "127.0.0.1:${toString cfg.port}";
       };
     };
 
-    users.users.wyattwtf = {
-      isSystemUser = true;
-      group = "wyattwtf";
+    users.users = optionalAttrs (cfg.user == "wyattwtf") {
+      wyattwtf = {
+        isSystemUser = true;
+        inherit (cfg) group;
+      };
     };
 
-    users.groups.wyattwtf = { };
+    users.groups = optionalAttrs (cfg.group == "wyattwtf") { wyattwtf = { }; };
   };
 }
