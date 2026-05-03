@@ -102,27 +102,117 @@ fn HomePage() -> impl IntoView {
 #[component]
 fn ActivityFeedView(feed: ActivityFeed) -> impl IntoView {
     let status = feed_status(&feed);
-    let items = feed.items;
-    let content = if items.is_empty() {
-        view! { <p class="feed-status">"No activity found."</p> }.into_any()
-    } else {
-        view! {
-            <ol class="feed-list">
-                <For
-                    each=move || items.clone()
-                    key=|activity| activity.id.clone()
-                    children=|activity| view! { <ActivityItem activity/> }
-                />
-            </ol>
-        }
-        .into_any()
+    let feed_is_empty = feed.items.is_empty();
+    let items = StoredValue::new(feed.items);
+    let (source_filters, set_source_filters) = signal(SourceFilters::all());
+    let visible_items = move || {
+        let filters = source_filters.get();
+        items.with_value(|items| filtered_activities(items, filters))
+    };
+    let source_selection_is_empty = move || {
+        let filters = source_filters.get();
+        !feed_is_empty
+            && items
+                .with_value(|items| filtered_activities(items, filters))
+                .is_empty()
     };
 
     view! {
         {(!status.is_empty()).then(|| view! {
             <p class="feed-status">{status}</p>
         })}
-        {content}
+        <SourceFilterControls filters=source_filters set_filters=set_source_filters/>
+        {feed_is_empty.then(|| view! {
+            <p class="feed-status">"No activity found."</p>
+        })}
+        <p class="feed-status" hidden=move || !source_selection_is_empty()>
+            "No activity found for the selected sources."
+        </p>
+        <ol class="feed-list">
+            <For
+                each=visible_items
+                key=|activity| activity.id.clone()
+                children=|activity| view! { <ActivityItem activity/> }
+            />
+        </ol>
+    }
+}
+
+fn filtered_activities(items: &[Activity], filters: SourceFilters) -> Vec<Activity> {
+    items
+        .iter()
+        .filter(|activity| filters.includes(activity.source))
+        .cloned()
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+struct SourceFilters {
+    lastfm: bool,
+    goodreads: bool,
+    letterboxd: bool,
+}
+
+impl SourceFilters {
+    const fn all() -> Self {
+        Self {
+            lastfm: true,
+            goodreads: true,
+            letterboxd: true,
+        }
+    }
+
+    const fn includes(self, source: Source) -> bool {
+        match source {
+            Source::Letterboxd => self.letterboxd,
+            Source::Goodreads => self.goodreads,
+            Source::Lastfm => self.lastfm,
+        }
+    }
+
+    fn set_source(&mut self, source: Source, enabled: bool) {
+        match source {
+            Source::Letterboxd => self.letterboxd = enabled,
+            Source::Goodreads => self.goodreads = enabled,
+            Source::Lastfm => self.lastfm = enabled,
+        }
+    }
+}
+
+#[component]
+fn SourceFilterControls(
+    filters: ReadSignal<SourceFilters>,
+    set_filters: WriteSignal<SourceFilters>,
+) -> impl IntoView {
+    view! {
+        <fieldset class="source-filters" aria-label="Activity source filters">
+            <SourceFilterOption source=Source::Lastfm filters set_filters/>
+            <SourceFilterOption source=Source::Goodreads filters set_filters/>
+            <SourceFilterOption source=Source::Letterboxd filters set_filters/>
+        </fieldset>
+    }
+}
+
+#[component]
+fn SourceFilterOption(
+    source: Source,
+    filters: ReadSignal<SourceFilters>,
+    set_filters: WriteSignal<SourceFilters>,
+) -> impl IntoView {
+    let label = source_label(source);
+
+    view! {
+        <label class="source-filter">
+            <input
+                type="checkbox"
+                checked=move || filters.get().includes(source)
+                on:change=move |event| {
+                    let enabled = event_target_checked(&event);
+                    set_filters.update(|filters| filters.set_source(source, enabled));
+                }
+            />
+            <span>{label}</span>
+        </label>
     }
 }
 
