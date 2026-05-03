@@ -19,15 +19,24 @@ async fn main() {
     let addr = toml_conf.leptos_options.site_addr;
     let leptos_options = toml_conf.leptos_options;
     let routes = generate_route_list(App);
+    let app_state = AppState::new(server_config);
 
     let leptos_app = Router::new()
-        .leptos_routes(&leptos_options, routes, {
-            let leptos_options = leptos_options.clone();
-            move || shell(leptos_options.clone())
-        })
+        .leptos_routes_with_context(
+            &leptos_options,
+            routes,
+            {
+                let app_state = app_state.clone();
+                move || provide_context(app_state.clone())
+            },
+            {
+                let leptos_options = leptos_options.clone();
+                move || shell(leptos_options.clone())
+            },
+        )
         .fallback(leptos_axum::file_and_error_handler(shell))
         .with_state(leptos_options);
-    let app = api_router(AppState::new(server_config)).merge(leptos_app);
+    let app = api_router(app_state).merge(leptos_app);
 
     log!("listening on http://{}", &addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();

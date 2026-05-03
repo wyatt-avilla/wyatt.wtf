@@ -21,6 +21,20 @@ pub struct Activity {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ActivityFeed {
+    pub fetched_at: DateTime<Utc>,
+    pub stale_sources: Vec<Source>,
+    pub errors: Vec<SourceFailure>,
+    pub items: Vec<Activity>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SourceFailure {
+    pub source: Source,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ActivityDetails {
     FilmWatch(LetterboxdWatch),

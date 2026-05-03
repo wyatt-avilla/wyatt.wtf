@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::models::{
-    Activity, ActivityDetails, GoodreadsBookUpdate, LastfmTrack, LetterboxdWatch, Source,
+    Activity, ActivityDetails, ActivityFeed, GoodreadsBookUpdate, LastfmTrack, LetterboxdWatch,
+    Source, SourceFailure,
 };
 
 use super::{
@@ -76,20 +77,6 @@ struct SourceResponse<T> {
     items: Vec<T>,
 }
 
-#[derive(Serialize)]
-struct ActivityResponse {
-    fetched_at: DateTime<Utc>,
-    stale_sources: Vec<Source>,
-    errors: Vec<SourceFailure>,
-    items: Vec<Activity>,
-}
-
-#[derive(Serialize)]
-struct SourceFailure {
-    source: Source,
-    message: String,
-}
-
 pub fn api_router(state: AppState) -> Router {
     Router::new()
         .route("/api/letterboxd", get(letterboxd))
@@ -147,81 +134,85 @@ async fn lastfm(
 async fn activity(
     State(state): State<AppState>,
     Query(query): Query<LimitQuery>,
-) -> Json<ActivityResponse> {
-    let limit = query.limit.unwrap_or(30).min(ACTIVITY_LIMIT_MAX);
-    let fetched_at = Utc::now();
-    let mut stale_sources = Vec::new();
-    let mut errors = Vec::new();
-    let mut items = Vec::new();
-
-    match state.letterboxd().await {
-        Ok(cached) => {
-            collect_source_status(
-                Source::Letterboxd,
-                cached.stale,
-                cached.error,
-                &mut stale_sources,
-                &mut errors,
-            );
-            items.extend(cached.items.into_iter().map(letterboxd_activity));
-        }
-        Err(err) => errors.push(SourceFailure {
-            source: Source::Letterboxd,
-            message: err.to_string(),
-        }),
-    }
-
-    match state.goodreads().await {
-        Ok(cached) => {
-            collect_source_status(
-                Source::Goodreads,
-                cached.stale,
-                cached.error,
-                &mut stale_sources,
-                &mut errors,
-            );
-            items.extend(cached.items.into_iter().map(goodreads_activity));
-        }
-        Err(err) => errors.push(SourceFailure {
-            source: Source::Goodreads,
-            message: err.to_string(),
-        }),
-    }
-
-    match state.lastfm().await {
-        Ok(cached) => {
-            collect_source_status(
-                Source::Lastfm,
-                cached.stale,
-                cached.error,
-                &mut stale_sources,
-                &mut errors,
-            );
-            items.extend(
-                cached
-                    .items
-                    .into_iter()
-                    .map(|item| lastfm_activity(item, cached.fetched_at)),
-            );
-        }
-        Err(err) => errors.push(SourceFailure {
-            source: Source::Lastfm,
-            message: err.to_string(),
-        }),
-    }
-
-    items.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
-    items.truncate(limit);
-
-    Json(ActivityResponse {
-        fetched_at,
-        stale_sources,
-        errors,
-        items,
-    })
+) -> Json<ActivityFeed> {
+    Json(state.activity_feed(query.limit.unwrap_or(30)).await)
 }
 
 impl AppState {
+    pub async fn activity_feed(&self, limit: usize) -> ActivityFeed {
+        let limit = limit.min(ACTIVITY_LIMIT_MAX);
+        let fetched_at = Utc::now();
+        let mut stale_sources = Vec::new();
+        let mut errors = Vec::new();
+        let mut items = Vec::new();
+
+        match self.letterboxd().await {
+            Ok(cached) => {
+                collect_source_status(
+                    Source::Letterboxd,
+                    cached.stale,
+                    cached.error,
+                    &mut stale_sources,
+                    &mut errors,
+                );
+                items.extend(cached.items.into_iter().map(letterboxd_activity));
+            }
+            Err(err) => errors.push(SourceFailure {
+                source: Source::Letterboxd,
+                message: err.to_string(),
+            }),
+        }
+
+        match self.goodreads().await {
+            Ok(cached) => {
+                collect_source_status(
+                    Source::Goodreads,
+                    cached.stale,
+                    cached.error,
+                    &mut stale_sources,
+                    &mut errors,
+                );
+                items.extend(cached.items.into_iter().map(goodreads_activity));
+            }
+            Err(err) => errors.push(SourceFailure {
+                source: Source::Goodreads,
+                message: err.to_string(),
+            }),
+        }
+
+        match self.lastfm().await {
+            Ok(cached) => {
+                collect_source_status(
+                    Source::Lastfm,
+                    cached.stale,
+                    cached.error,
+                    &mut stale_sources,
+                    &mut errors,
+                );
+                items.extend(
+                    cached
+                        .items
+                        .into_iter()
+                        .map(|item| lastfm_activity(item, cached.fetched_at)),
+                );
+            }
+            Err(err) => errors.push(SourceFailure {
+                source: Source::Lastfm,
+                message: err.to_string(),
+            }),
+        }
+
+        items.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
+        items.truncate(limit);
+
+        ActivityFeed {
+            fetched_at,
+            stale_sources,
+            errors,
+            items,
+        }
+    }
+
     async fn letterboxd(&self) -> Result<CachedResult<Vec<LetterboxdWatch>>> {
         get_or_fetch(&self.cache.letterboxd, RSS_TTL, || async {
             sources::fetch_letterboxd(&self.client, &self.config.letterboxd_rss_url).await
