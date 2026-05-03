@@ -1,10 +1,11 @@
 use chrono::NaiveDate;
 use reqwest::Client;
 use roxmltree::{Document, Node};
+use scraper::{Html, Selector};
 
 use crate::models::{LetterboxdWatch, TmdbKind, TmdbRef};
 
-use super::{child_text, first_image_src, parse_rfc2822_child};
+use super::{child_text, parse_rfc2822_child};
 use crate::server::error::{BackendError, Result};
 
 pub async fn fetch_letterboxd(client: &Client, url: &str) -> Result<Vec<LetterboxdWatch>> {
@@ -81,6 +82,15 @@ fn parse_letterboxd_item(item: Node<'_, '_>) -> Result<Option<LetterboxdWatch>> 
         url,
         published_at,
     }))
+}
+
+fn first_image_src(description: &str) -> Option<String> {
+    let html = Html::parse_fragment(description);
+    let selector = Selector::parse("img").expect("valid image selector");
+    html.select(&selector)
+        .next()
+        .and_then(|node| node.value().attr("src"))
+        .map(str::to_string)
 }
 
 #[cfg(test)]

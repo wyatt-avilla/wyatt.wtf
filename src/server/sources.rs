@@ -4,7 +4,6 @@ pub(crate) mod letterboxd;
 
 use chrono::{DateTime, Utc};
 use roxmltree::Node;
-use scraper::{Html, Selector};
 
 use super::error::{BackendError, Result};
 
@@ -29,13 +28,4 @@ fn parse_rfc2822_child(node: Node<'_, '_>, name: &'static str) -> Result<DateTim
 
 fn clean_text(input: &str) -> String {
     input.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn first_image_src(description: &str) -> Option<String> {
-    let html = Html::parse_fragment(description);
-    let selector = Selector::parse("img").expect("valid image selector");
-    html.select(&selector)
-        .next()
-        .and_then(|node| node.value().attr("src"))
-        .map(str::to_string)
 }

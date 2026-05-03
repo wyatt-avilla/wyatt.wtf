@@ -10,6 +10,14 @@ use crate::server::error::{BackendError, Result};
 
 const GOODREADS_BASE_URL: &str = "https://www.goodreads.com/";
 
+#[derive(Default)]
+struct GoodreadsDescriptionEnrichment {
+    author: Option<String>,
+    cover_url: Option<String>,
+    book_url: Option<String>,
+    author_url: Option<String>,
+}
+
 pub async fn fetch_goodreads(client: &Client, url: &str) -> Result<Vec<GoodreadsBookUpdate>> {
     let body = client
         .get(url)
@@ -41,44 +49,21 @@ fn parse_goodreads_item(item: Node<'_, '_>) -> Result<Option<GoodreadsBookUpdate
         child_text(item, "link").ok_or(BackendError::MissingField("goodreads link"))?;
     let published_at = parse_rfc2822_child(item, "pubDate")?;
     let id = child_text(item, "guid").unwrap_or_else(|| review_url.clone());
-    let html = Html::parse_fragment(&description);
-    let book_link_selector = Selector::parse("a.bookTitle").expect("valid book title selector");
-    let author_link_selector = Selector::parse("a.authorName").expect("valid author selector");
-    let image_selector = Selector::parse("img").expect("valid image selector");
-
-    let book_link = html.select(&book_link_selector).next();
-    let title = book_link
-        .map(|node| clean_text(&node.text().collect::<String>()))
+    let enrichment = goodreads_description_enrichment(&description);
+    let title = quoted_text(&title_text)
+        .map(|title| clean_text(&title))
         .filter(|title| !title.is_empty())
-        .or_else(|| quoted_text(&title_text))
         .ok_or(BackendError::MissingField("goodreads book title"))?;
-    let book_url = book_link
-        .and_then(|node| node.value().attr("href"))
-        .and_then(|href| absolute_goodreads_url(href).ok());
-
-    let author_link = html.select(&author_link_selector).next();
-    let author = author_link
-        .map(|node| clean_text(&node.text().collect::<String>()))
-        .filter(|author| !author.is_empty());
-    let author_url = author_link
-        .and_then(|node| node.value().attr("href"))
-        .and_then(|href| absolute_goodreads_url(href).ok());
-
-    let cover_url = html
-        .select(&image_selector)
-        .next()
-        .and_then(|node| node.value().attr("src"))
-        .and_then(|src| absolute_goodreads_url(src).ok());
 
     Ok(Some(GoodreadsBookUpdate {
         id,
         action,
         title,
-        author,
+        author: enrichment.author,
         rating: goodreads_rating(&description),
-        cover_url,
-        book_url,
-        author_url,
+        cover_url: enrichment.cover_url,
+        book_url: enrichment.book_url,
+        author_url: enrichment.author_url,
         review_url,
         published_at,
     }))
@@ -116,6 +101,43 @@ fn quoted_text(input: &str) -> Option<String> {
         .and_then(|(_, rest)| rest.rsplit_once('\'').map(|(value, _)| value.to_string()))
 }
 
+fn goodreads_description_enrichment(description: &str) -> GoodreadsDescriptionEnrichment {
+    let html = Html::parse_fragment(description);
+    let link_selector = Selector::parse("a").expect("valid link selector");
+    let image_selector = Selector::parse("img").expect("valid image selector");
+
+    let mut enrichment = GoodreadsDescriptionEnrichment {
+        cover_url: html
+            .select(&image_selector)
+            .next()
+            .and_then(|node| node.value().attr("src"))
+            .and_then(|src| absolute_goodreads_url(src).ok()),
+        ..GoodreadsDescriptionEnrichment::default()
+    };
+
+    for link in html.select(&link_selector) {
+        let href = link.value().attr("href");
+        let text = clean_text(&link.text().collect::<String>());
+
+        if enrichment.book_url.is_none() {
+            enrichment.book_url = href
+                .filter(|href| href.contains("/book/show/"))
+                .and_then(|href| absolute_goodreads_url(href).ok());
+        }
+
+        if enrichment.author_url.is_none() {
+            enrichment.author_url = href
+                .filter(|href| href.contains("/author/show/"))
+                .and_then(|href| absolute_goodreads_url(href).ok());
+            if enrichment.author_url.is_some() && !text.is_empty() {
+                enrichment.author = Some(text);
+            }
+        }
+    }
+
+    enrichment
+}
+
 fn absolute_goodreads_url(href: &str) -> Result<String> {
     Ok(Url::parse(GOODREADS_BASE_URL)?.join(href)?.to_string())
 }
@@ -134,8 +156,8 @@ mod tests {
             <link>https://www.goodreads.com/review/show/1</link>
             <description><![CDATA[
                 <a href="/book/show/1"><img src="https://example.com/cover.jpg" /></a>
-                wyatt gave 5 stars to <a class="bookTitle" href="https://www.goodreads.com/book/show/1">Claude's Constitution</a>
-                <span class="by">by</span><a class="authorName" href="/author/show/1">Amanda Askell</a>
+                wyatt gave 5 stars to <a href="https://www.goodreads.com/book/show/1">Claude's Constitution (Hardcover)</a>
+                <span class="by">by</span><a href="/author/show/1">Amanda Askell</a>
             ]]></description>
         </item>
         <item>
@@ -154,5 +176,17 @@ mod tests {
         assert_eq!(items[0].title, "Claude's Constitution");
         assert_eq!(items[0].author.as_deref(), Some("Amanda Askell"));
         assert_eq!(items[0].rating, Some(5));
+        assert_eq!(
+            items[0].cover_url.as_deref(),
+            Some("https://example.com/cover.jpg")
+        );
+        assert_eq!(
+            items[0].book_url.as_deref(),
+            Some("https://www.goodreads.com/book/show/1")
+        );
+        assert_eq!(
+            items[0].author_url.as_deref(),
+            Some("https://www.goodreads.com/author/show/1")
+        );
     }
 }
