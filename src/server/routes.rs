@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 
 use crate::models::{
     Activity, ActivityDetails, ActivityFeed, GoodreadsBookUpdate, LastfmTrack, LetterboxdWatch,
-    Source, SourceFailure,
+    Source, SourceFailure, DEFAULT_ACTIVITY_LIMIT,
 };
 
 use super::{
@@ -24,6 +24,7 @@ const LASTFM_TTL: Duration = Duration::from_secs(60);
 const RSS_TTL: Duration = Duration::from_secs(60 * 60);
 const SOURCE_LIMIT_MAX: usize = 50;
 const ACTIVITY_LIMIT_MAX: usize = 100;
+const ACTIVITY_SOURCE_COUNT: usize = 3;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -139,12 +140,17 @@ async fn activity(
     State(state): State<AppState>,
     Query(query): Query<LimitQuery>,
 ) -> Json<ActivityFeed> {
-    Json(state.activity_feed(query.limit.unwrap_or(30)).await)
+    Json(
+        state
+            .activity_feed(query.limit.unwrap_or(DEFAULT_ACTIVITY_LIMIT))
+            .await,
+    )
 }
 
 impl AppState {
     pub async fn activity_feed(&self, limit: usize) -> ActivityFeed {
         let limit = limit.min(ACTIVITY_LIMIT_MAX);
+        let source_limit = activity_source_limit(limit);
         let fetched_at = Utc::now();
         let mut stale_sources = Vec::new();
         let mut errors = Vec::new();
@@ -159,7 +165,13 @@ impl AppState {
                     &mut stale_sources,
                     &mut errors,
                 );
-                items.extend(cached.items.into_iter().map(letterboxd_activity));
+                items.extend(
+                    cached
+                        .items
+                        .into_iter()
+                        .take(source_limit)
+                        .map(letterboxd_activity),
+                );
             }
             Err(err) => errors.push(SourceFailure {
                 source: Source::Letterboxd,
@@ -176,7 +188,13 @@ impl AppState {
                     &mut stale_sources,
                     &mut errors,
                 );
-                items.extend(cached.items.into_iter().map(goodreads_activity));
+                items.extend(
+                    cached
+                        .items
+                        .into_iter()
+                        .take(source_limit)
+                        .map(goodreads_activity),
+                );
             }
             Err(err) => errors.push(SourceFailure {
                 source: Source::Goodreads,
@@ -197,6 +215,7 @@ impl AppState {
                     cached
                         .items
                         .into_iter()
+                        .take(source_limit)
                         .map(|item| lastfm_activity(item, cached.fetched_at)),
                 );
             }
@@ -298,6 +317,10 @@ fn source_limit(limit: Option<usize>) -> usize {
     limit.unwrap_or(10).min(SOURCE_LIMIT_MAX)
 }
 
+fn activity_source_limit(limit: usize) -> usize {
+    limit.div_ceil(ACTIVITY_SOURCE_COUNT).max(1)
+}
+
 fn collect_source_status(
     source: Source,
     stale: bool,
@@ -352,6 +375,112 @@ fn lastfm_activity(item: LastfmTrack, fetched_at: DateTime<Utc>) -> Activity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::GoodreadsAction;
+
+    fn test_state(
+        letterboxd_items: Vec<LetterboxdWatch>,
+        goodreads_items: Vec<GoodreadsBookUpdate>,
+        lastfm_items: Vec<LastfmTrack>,
+    ) -> AppState {
+        AppState {
+            config: Arc::new(ServerConfig {
+                lastfm_api_key: "test".to_string(),
+                lastfm_username: "wyattwtf".to_string(),
+                letterboxd_rss_url: "https://letterboxd.example/rss".to_string(),
+                goodreads_rss_url: "https://goodreads.example/rss".to_string(),
+                upstream_timeout: Duration::from_secs(1),
+            }),
+            client: reqwest::Client::new(),
+            cache: Arc::new(ActivityCache {
+                letterboxd: RwLock::new(Some(Cached {
+                    fetched_at: Utc::now(),
+                    items: letterboxd_items,
+                })),
+                goodreads: RwLock::new(Some(Cached {
+                    fetched_at: Utc::now(),
+                    items: goodreads_items,
+                })),
+                lastfm: RwLock::new(Some(Cached {
+                    fetched_at: Utc::now(),
+                    items: lastfm_items,
+                })),
+            }),
+        }
+    }
+
+    fn letterboxd_watch(id: &str, published_at: DateTime<Utc>) -> LetterboxdWatch {
+        LetterboxdWatch {
+            id: id.to_string(),
+            title: "Movie".to_string(),
+            year: Some(2026),
+            rating: None,
+            rating_stars: None,
+            watched_date: None,
+            rewatch: false,
+            liked: false,
+            poster_url: None,
+            tmdb: None,
+            url: format!("https://letterboxd.example/{id}"),
+            published_at,
+        }
+    }
+
+    fn goodreads_update(id: &str, published_at: DateTime<Utc>) -> GoodreadsBookUpdate {
+        GoodreadsBookUpdate {
+            id: id.to_string(),
+            action: GoodreadsAction::Added,
+            title: "Book".to_string(),
+            author: None,
+            rating: None,
+            cover_url: None,
+            book_url: None,
+            author_url: None,
+            review_url: format!("https://goodreads.example/{id}"),
+            published_at,
+        }
+    }
+
+    fn lastfm_track(id: &str, played_at: DateTime<Utc>) -> LastfmTrack {
+        LastfmTrack {
+            id: id.to_string(),
+            title: "Track".to_string(),
+            artist: "Artist".to_string(),
+            album: None,
+            album_art_url: None,
+            url: format!("https://last.fm/{id}"),
+            played_at: Some(played_at),
+            now_playing: false,
+            artist_mbid: None,
+            album_mbid: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn activity_feed_keeps_each_source_from_being_crowded_out() {
+        let now = Utc::now();
+        let state = test_state(
+            vec![letterboxd_watch("movie", now - chrono::Duration::hours(3))],
+            vec![goodreads_update("book", now - chrono::Duration::hours(2))],
+            (0..5)
+                .map(|index| {
+                    lastfm_track(
+                        &format!("track-{index}"),
+                        now - chrono::Duration::minutes(index),
+                    )
+                })
+                .collect(),
+        );
+
+        let feed = state.activity_feed(3).await;
+
+        assert_eq!(
+            feed.items
+                .iter()
+                .map(|activity| activity.source)
+                .collect::<Vec<_>>(),
+            vec![Source::Lastfm, Source::Goodreads, Source::Letterboxd]
+        );
+    }
 
     #[tokio::test]
     async fn returns_fresh_cached_values_without_fetching() {
@@ -396,5 +525,12 @@ mod tests {
         assert_eq!(source_limit(None), 10);
         assert_eq!(source_limit(Some(2)), 2);
         assert_eq!(source_limit(Some(200)), SOURCE_LIMIT_MAX);
+    }
+
+    #[test]
+    fn derives_activity_source_limits_from_overall_limit() {
+        assert_eq!(activity_source_limit(1), 1);
+        assert_eq!(activity_source_limit(3), 1);
+        assert_eq!(activity_source_limit(DEFAULT_ACTIVITY_LIMIT), 20);
     }
 }

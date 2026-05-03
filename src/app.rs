@@ -9,6 +9,7 @@ use leptos_router::{
 
 use crate::models::{
     Activity, ActivityDetails, ActivityFeed, GoodreadsAction, LastfmTrack, LetterboxdWatch, Source,
+    DEFAULT_ACTIVITY_LIMIT,
 };
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -71,7 +72,7 @@ pub async fn get_activity_feed(limit: usize) -> Result<ActivityFeed, ServerFnErr
 
 #[component]
 fn HomePage() -> impl IntoView {
-    let feed = Resource::new(|| (), |()| get_activity_feed(30));
+    let feed = Resource::new(|| (), |()| get_activity_feed(DEFAULT_ACTIVITY_LIMIT));
 
     view! {
         <section class="feed-shell">
