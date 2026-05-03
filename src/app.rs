@@ -1,5 +1,8 @@
 #![allow(clippy::must_use_candidate)]
 
+mod details;
+
+use details::activity_detail_lines;
 use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
 use leptos_router::{
@@ -7,10 +10,7 @@ use leptos_router::{
     StaticSegment,
 };
 
-use crate::models::{
-    Activity, ActivityDetails, ActivityFeed, GoodreadsAction, LastfmTrack, LetterboxdWatch, Source,
-    DEFAULT_ACTIVITY_LIMIT,
-};
+use crate::models::{Activity, ActivityDetails, ActivityFeed, Source, DEFAULT_ACTIVITY_LIMIT};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -222,8 +222,9 @@ fn SourceFilterOption(
 #[component]
 fn ActivityItem(activity: Activity) -> impl IntoView {
     let source = source_label(activity.source);
+    let title = activity_title(&activity);
     let timestamp = format_timestamp(activity.occurred_at);
-    let detail = activity_detail(&activity.details);
+    let details = activity_detail_lines(&activity.details);
     let image = activity.image_url.clone().map_or_else(
         || view! { <div class="activity-image activity-image--empty"></div> }.into_any(),
         |url| view! { <img class="activity-image" src=url alt="" loading="lazy" /> }.into_any(),
@@ -242,11 +243,23 @@ fn ActivityItem(activity: Activity) -> impl IntoView {
                     target="_blank"
                     rel="noreferrer"
                 >
-                    {activity.title}
+                    {title}
                 </a>
-                <p class="activity-detail">{detail}</p>
+                <div class="activity-detail">
+                    {details.into_iter().map(|detail| view! { <p>{detail}</p> }).collect_view()}
+                </div>
             </div>
         </li>
+    }
+}
+
+fn activity_title(activity: &Activity) -> String {
+    match &activity.details {
+        ActivityDetails::FilmWatch(watch) => match watch.year {
+            Some(year) => format!("{} ({year})", activity.title),
+            None => activity.title.clone(),
+        },
+        ActivityDetails::BookUpdate(_) | ActivityDetails::TrackPlay(_) => activity.title.clone(),
     }
 }
 
@@ -275,58 +288,6 @@ fn feed_status(feed: &ActivityFeed) -> String {
     status.join(" ")
 }
 
-fn activity_detail(details: &ActivityDetails) -> String {
-    match details {
-        ActivityDetails::FilmWatch(watch) => film_detail(watch),
-        ActivityDetails::BookUpdate(update) => {
-            let action = goodreads_action_label(update.action);
-            match (&update.author, update.rating) {
-                (Some(author), Some(rating)) => format!("{action} by {author} - {rating}/5"),
-                (Some(author), None) => format!("{action} by {author}"),
-                (None, Some(rating)) => format!("{action} - {rating}/5"),
-                (None, None) => action.to_string(),
-            }
-        }
-        ActivityDetails::TrackPlay(track) => track_detail(track),
-    }
-}
-
-fn film_detail(watch: &LetterboxdWatch) -> String {
-    let mut parts = Vec::new();
-
-    if let Some(year) = watch.year {
-        parts.push(year.to_string());
-    }
-    if let Some(rating) = watch.rating_stars.as_ref() {
-        parts.push(rating.clone());
-    }
-    if watch.liked {
-        parts.push("liked".to_string());
-    }
-    if watch.rewatch {
-        parts.push("rewatch".to_string());
-    }
-
-    if parts.is_empty() {
-        "watched on Letterboxd".to_string()
-    } else {
-        parts.join(" - ")
-    }
-}
-
-fn track_detail(track: &LastfmTrack) -> String {
-    let prefix = if track.now_playing {
-        "now playing"
-    } else {
-        "played"
-    };
-
-    match &track.album {
-        Some(album) => format!("{prefix} by {} from {album}", track.artist),
-        None => format!("{prefix} by {}", track.artist),
-    }
-}
-
 fn source_label(source: Source) -> &'static str {
     match source {
         Source::Letterboxd => "Letterboxd",
@@ -335,16 +296,50 @@ fn source_label(source: Source) -> &'static str {
     }
 }
 
-fn goodreads_action_label(action: GoodreadsAction) -> &'static str {
-    match action {
-        GoodreadsAction::WantsToRead => "wants to read",
-        GoodreadsAction::StartedReading => "started reading",
-        GoodreadsAction::FinishedReading => "finished reading",
-        GoodreadsAction::Rated => "rated",
-        GoodreadsAction::Added => "added",
-    }
-}
-
 fn format_timestamp(timestamp: chrono::DateTime<chrono::Utc>) -> String {
     timestamp.format("%Y-%m-%d %H:%M UTC").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeZone, Utc};
+
+    use super::*;
+    use crate::models::LetterboxdWatch;
+
+    fn letterboxd_activity(year: Option<u16>) -> Activity {
+        let watch = LetterboxdWatch {
+            id: "film".to_string(),
+            title: "Perfect Blue".to_string(),
+            year,
+            rating: None,
+            rating_stars: None,
+            watched_date: None,
+            rewatch: false,
+            liked: false,
+            poster_url: None,
+            tmdb: None,
+            url: "https://letterboxd.example/watch".to_string(),
+            published_at: Utc.with_ymd_and_hms(2026, 5, 2, 12, 0, 0).unwrap(),
+        };
+
+        Activity {
+            id: watch.id.clone(),
+            source: Source::Letterboxd,
+            occurred_at: watch.published_at,
+            external_url: watch.url.clone(),
+            title: watch.title.clone(),
+            image_url: None,
+            details: ActivityDetails::FilmWatch(watch),
+        }
+    }
+
+    #[test]
+    fn letterboxd_title_includes_year_when_available() {
+        assert_eq!(
+            activity_title(&letterboxd_activity(Some(1997))),
+            "Perfect Blue (1997)"
+        );
+        assert_eq!(activity_title(&letterboxd_activity(None)), "Perfect Blue");
+    }
 }
