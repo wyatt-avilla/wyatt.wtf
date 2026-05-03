@@ -82,6 +82,14 @@
               doCheck = false;
             };
 
+          mkNixCheck =
+            name: package: command:
+            pkgs.runCommand name { nativeBuildInputs = [ package ]; } ''
+              cd ${./.}
+              ${command}
+              touch $out
+            '';
+
           leptosApp = rustPlatform.buildRustPackage {
             pname = cargoToml.package.name;
             inherit (cargoToml.package) version;
@@ -151,6 +159,18 @@
           '';
 
           checks = {
+            nixfmt = mkNixCheck "nixfmt" pkgs.nixfmt-rfc-style ''
+              find . -name '*.nix' -print0 | xargs -0 nixfmt --check
+            '';
+
+            statix = mkNixCheck "statix" pkgs.statix ''
+              statix check .
+            '';
+
+            deadnix = mkNixCheck "deadnix" pkgs.deadnix ''
+              deadnix --fail .
+            '';
+
             cargo-fmt = pkgs.runCommand "cargo-fmt" { buildInputs = [ rustToolchain ]; } ''
               cd ${./.}
               cargo fmt --check
