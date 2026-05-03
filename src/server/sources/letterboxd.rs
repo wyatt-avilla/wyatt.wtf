@@ -8,6 +8,9 @@ use crate::models::{LetterboxdWatch, TmdbKind, TmdbRef};
 use super::{child_text, parse_rfc2822_child};
 use crate::server::error::{BackendError, Result};
 
+const POSTER_WIDTH: u16 = 150;
+const POSTER_HEIGHT: u16 = 225;
+
 pub async fn fetch_letterboxd(client: &Client, url: &str) -> Result<Vec<LetterboxdWatch>> {
     let body = client
         .get(url)
@@ -54,8 +57,9 @@ fn parse_letterboxd_item(item: Node<'_, '_>) -> Result<Option<LetterboxdWatch>> 
         child_text(item, "rewatch").is_some_and(|value| value.eq_ignore_ascii_case("yes"));
     let liked =
         child_text(item, "memberLike").is_some_and(|value| value.eq_ignore_ascii_case("yes"));
-    let poster_url =
-        child_text(item, "description").and_then(|description| first_image_src(&description));
+    let poster_url = child_text(item, "description")
+        .and_then(|description| first_image_src(&description))
+        .map(|url| resized_poster_url(&url));
     let tmdb = child_text(item, "movieId")
         .map(|id| TmdbRef {
             kind: TmdbKind::Movie,
@@ -93,6 +97,52 @@ fn first_image_src(description: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn resized_poster_url(url: &str) -> String {
+    if !url.contains("ltrbxd.com/resized/") {
+        return url.to_string();
+    }
+
+    let (path, query) = url
+        .split_once('?')
+        .map_or((url, None), |(path, query)| (path, Some(query)));
+    let Some(crop_index) = path.rfind("-crop.") else {
+        return url.to_string();
+    };
+
+    let prefix_and_dimensions = &path[..crop_index];
+    let crop_suffix = &path[crop_index..];
+    let mut parts = prefix_and_dimensions.rsplitn(5, '-');
+    let Some(height) = parts.next() else {
+        return url.to_string();
+    };
+    let Some(y_offset) = parts.next() else {
+        return url.to_string();
+    };
+    let Some(width) = parts.next() else {
+        return url.to_string();
+    };
+    let Some(x_offset) = parts.next() else {
+        return url.to_string();
+    };
+    let Some(prefix) = parts.next() else {
+        return url.to_string();
+    };
+
+    if x_offset != "0"
+        || y_offset != "0"
+        || width.parse::<u16>().is_err()
+        || height.parse::<u16>().is_err()
+    {
+        return url.to_string();
+    }
+
+    let resized = format!("{prefix}-0-{POSTER_WIDTH}-0-{POSTER_HEIGHT}{crop_suffix}");
+    match query {
+        Some(query) => format!("{resized}?{query}"),
+        None => resized,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,7 +161,7 @@ mod tests {
             <letterboxd:memberRating>5.0</letterboxd:memberRating>
             <letterboxd:memberLike>No</letterboxd:memberLike>
             <tmdb:movieId>10494</tmdb:movieId>
-            <description><![CDATA[<p><img src="https://example.com/poster.jpg"/></p>]]></description>
+            <description><![CDATA[<p><img src="https://a.ltrbxd.com/resized/film-poster/4/6/1/7/5/46175-perfect-blue-0-600-0-900-crop.jpg?v=1ed5878cce"/></p>]]></description>
         </item></channel></rss>"#;
 
         let items = parse_letterboxd(xml).unwrap();
@@ -123,7 +173,29 @@ mod tests {
         assert!(items[0].rewatch);
         assert_eq!(
             items[0].poster_url.as_deref(),
-            Some("https://example.com/poster.jpg")
+            Some("https://a.ltrbxd.com/resized/film-poster/4/6/1/7/5/46175-perfect-blue-0-150-0-225-crop.jpg?v=1ed5878cce")
+        );
+    }
+
+    #[test]
+    fn resizes_letterboxd_poster_urls() {
+        assert_eq!(
+            resized_poster_url(
+                "https://a.ltrbxd.com/resized/sm/upload/y2/i8/9s/h1/tNr2KYytArZNSh0K8PUcHU3JnX4-0-600-0-900-crop.jpg?v=45f739a242"
+            ),
+            "https://a.ltrbxd.com/resized/sm/upload/y2/i8/9s/h1/tNr2KYytArZNSh0K8PUcHU3JnX4-0-150-0-225-crop.jpg?v=45f739a242"
+        );
+    }
+
+    #[test]
+    fn leaves_unknown_poster_urls_alone() {
+        assert_eq!(
+            resized_poster_url("https://example.com/poster.jpg"),
+            "https://example.com/poster.jpg"
+        );
+        assert_eq!(
+            resized_poster_url("https://a.ltrbxd.com/image/poster.jpg"),
+            "https://a.ltrbxd.com/image/poster.jpg"
         );
     }
 }

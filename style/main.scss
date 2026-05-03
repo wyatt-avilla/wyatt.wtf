@@ -92,6 +92,11 @@ a {
   background: #1f1f28;
 }
 
+.activity-image--lastfm {
+  height: 72px;
+  aspect-ratio: 1;
+}
+
 .activity-image--empty {
   border: 1px solid #2a2a37;
 }
@@ -140,5 +145,9 @@ a {
   .activity-image {
     width: 56px;
     height: 76px;
+  }
+
+  .activity-image--lastfm {
+    height: 56px;
   }
 }

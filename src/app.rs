@@ -222,12 +222,14 @@ fn SourceFilterOption(
 #[component]
 fn ActivityItem(activity: Activity) -> impl IntoView {
     let source = source_label(activity.source);
+    let image_class = format!("activity-image {}", activity_image_class(activity.source));
+    let empty_image_class = format!("{image_class} activity-image--empty");
     let title = activity_title(&activity);
     let timestamp = format_timestamp(activity.occurred_at);
     let details = activity_detail_lines(&activity.details);
     let image = activity.image_url.clone().map_or_else(
-        || view! { <div class="activity-image activity-image--empty"></div> }.into_any(),
-        |url| view! { <img class="activity-image" src=url alt="" loading="lazy" /> }.into_any(),
+        || view! { <div class=empty_image_class></div> }.into_any(),
+        |url| view! { <img class=image_class src=url alt="" loading="lazy" /> }.into_any(),
     );
 
     view! {
@@ -293,6 +295,14 @@ fn source_label(source: Source) -> &'static str {
         Source::Letterboxd => "Letterboxd",
         Source::Goodreads => "Goodreads",
         Source::Lastfm => "Last.fm",
+    }
+}
+
+fn activity_image_class(source: Source) -> &'static str {
+    match source {
+        Source::Letterboxd => "activity-image--letterboxd",
+        Source::Goodreads => "activity-image--goodreads",
+        Source::Lastfm => "activity-image--lastfm",
     }
 }
 
