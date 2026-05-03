@@ -1,9 +1,140 @@
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap');
 
 body {
-    margin-top: 4rem;
-	font-family: 'Fira Code', mono;
-	text-align: center;
+    margin: 0;
+    font-family: 'Fira Code', mono;
     background-color: #16161D;
     color: #C8C093;
+}
+
+a {
+    color: inherit;
+}
+
+.feed-shell {
+    box-sizing: border-box;
+    width: min(760px, 100%);
+    margin: 0 auto;
+    padding: 4rem 1rem;
+}
+
+.feed-header {
+    margin-bottom: 2rem;
+
+    h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 700;
+    }
+
+    p {
+        margin: 0.5rem 0 0;
+        color: #a6a69c;
+    }
+}
+
+.feed-status {
+    margin: 1rem 0;
+    color: #a6a69c;
+    line-height: 1.6;
+}
+
+.feed-status--error {
+    color: #e46876;
+}
+
+.source-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0 0 1rem;
+    padding: 0;
+    border: 0;
+}
+
+.source-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: #dcd7ba;
+    cursor: pointer;
+    user-select: none;
+
+    input {
+        width: 1rem;
+        height: 1rem;
+        margin: 0;
+        accent-color: #76946a;
+    }
+}
+
+.feed-list {
+    display: grid;
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.activity-item {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+    padding: 1rem 0;
+    border-top: 1px solid #2a2a37;
+}
+
+.activity-image {
+    width: 72px;
+    height: 96px;
+    object-fit: cover;
+    background: #1f1f28;
+}
+
+.activity-image--empty {
+    border: 1px solid #2a2a37;
+}
+
+.activity-content {
+    min-width: 0;
+}
+
+.activity-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.35rem;
+    color: #a6a69c;
+    font-size: 0.82rem;
+}
+
+.activity-title {
+    display: inline-block;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.4;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+}
+
+.activity-detail {
+    margin: 0.4rem 0 0;
+    color: #dcd7ba;
+    line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+    .feed-shell {
+        padding-top: 2rem;
+    }
+
+    .activity-item {
+        grid-template-columns: 56px minmax(0, 1fr);
+    }
+
+    .activity-image {
+        width: 56px;
+        height: 76px;
+    }
 }

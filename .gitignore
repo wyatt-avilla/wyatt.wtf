@@ -29,3 +29,11 @@ target
 result
 
 .sass-cache/
+
+# Env
+.env
+.envrc
+
+# Local files
+*.local.*
+*.local
