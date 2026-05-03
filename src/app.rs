@@ -78,7 +78,7 @@ fn HomePage() -> impl IntoView {
         <section class="feed-shell">
             <header class="feed-header">
                 <h1>"wyatt.wtf"</h1>
-                <p>"recent movies, books, and music"</p>
+                <p>"recent music, books, and movies"</p>
             </header>
 
             <Suspense fallback=|| {
