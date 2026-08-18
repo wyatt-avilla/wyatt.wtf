@@ -48,6 +48,11 @@ with lib;
       description = "Path to a file containing the Last.fm API key.";
     };
 
+    resendApiKeyPath = mkOption {
+      type = types.str;
+      description = "Path to a file containing the Resend API key.";
+    };
+
     goodreadsRssUrlPath = mkOption {
       type = types.str;
       description = "Path to a file containing the Goodreads updates RSS URL.";
@@ -63,6 +68,18 @@ with lib;
       type = types.str;
       default = "https://letterboxd.com/wyattwtf/rss/";
       description = "Letterboxd RSS URL.";
+    };
+
+    errorEmailFrom = mkOption {
+      type = types.str;
+      default = "wyatt.wtf <notifications@wyatt.wtf>";
+      description = "Sender address for source error notification emails.";
+    };
+
+    errorEmailTo = mkOption {
+      type = types.str;
+      default = "wyatt@linux.com";
+      description = "Recipient address for source error notification emails.";
     };
 
     upstreamTimeoutSeconds = mkOption {
@@ -83,12 +100,18 @@ with lib;
           "${bin}"
           "--lastfm-api-key-path"
           cfg.lastfmApiKeyPath
+          "--resend-api-key-path"
+          cfg.resendApiKeyPath
           "--lastfm-username"
           cfg.lastfmUsername
           "--letterboxd-rss-url"
           cfg.letterboxdRssUrl
           "--goodreads-rss-url-path"
           cfg.goodreadsRssUrlPath
+          "--error-email-from"
+          cfg.errorEmailFrom
+          "--error-email-to"
+          cfg.errorEmailTo
           "--upstream-timeout-seconds"
           (toString cfg.upstreamTimeoutSeconds)
         ];

@@ -17,6 +17,7 @@ use crate::models::{
 use super::{
     config::ServerConfig,
     error::{BackendError, Result},
+    notifications::ErrorNotifier,
     sources,
 };
 
@@ -31,6 +32,7 @@ pub struct AppState {
     config: Arc<ServerConfig>,
     client: reqwest::Client,
     cache: Arc<ActivityCache>,
+    error_notifier: ErrorNotifier,
 }
 
 impl AppState {
@@ -46,10 +48,14 @@ impl AppState {
             .build()
             .map_err(BackendError::ClientBuild)?;
 
+        let config = Arc::new(config);
+        let error_notifier = ErrorNotifier::new(client.clone(), config.clone());
+
         Ok(Self {
-            config: Arc::new(config),
+            config,
             client,
             cache: Arc::new(ActivityCache::default()),
+            error_notifier,
         })
     }
 }
@@ -243,7 +249,7 @@ impl AppState {
     }
 
     async fn letterboxd(&self) -> Result<CachedResult<Vec<LetterboxdWatch>>> {
-        get_or_fetch(
+        self.get_or_fetch(
             Source::Letterboxd,
             &self.cache.letterboxd,
             RSS_TTL,
@@ -255,7 +261,7 @@ impl AppState {
     }
 
     async fn goodreads(&self) -> Result<CachedResult<Vec<GoodreadsBookUpdate>>> {
-        get_or_fetch(
+        self.get_or_fetch(
             Source::Goodreads,
             &self.cache.goodreads,
             RSS_TTL,
@@ -267,7 +273,7 @@ impl AppState {
     }
 
     async fn lastfm(&self) -> Result<CachedResult<Vec<LastfmTrack>>> {
-        get_or_fetch(Source::Lastfm, &self.cache.lastfm, LASTFM_TTL, || async {
+        self.get_or_fetch(Source::Lastfm, &self.cache.lastfm, LASTFM_TTL, || async {
             sources::fetch_lastfm(
                 &self.client,
                 &self.config.lastfm_username,
@@ -277,56 +283,57 @@ impl AppState {
         })
         .await
     }
-}
-
-async fn get_or_fetch<T, F, Fut>(
-    source: Source,
-    slot: &RwLock<Option<Cached<Vec<T>>>>,
-    ttl: Duration,
-    fetch: F,
-) -> Result<CachedResult<Vec<T>>>
-where
-    T: Clone,
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<Vec<T>>>,
-{
-    let cached = slot.read().await.clone();
-    if let Some(cached) = cached.as_ref() {
-        let max_age = chrono::Duration::from_std(ttl).unwrap_or(chrono::Duration::MAX);
-        if Utc::now().signed_duration_since(cached.fetched_at) < max_age {
-            return Ok(CachedResult {
-                fetched_at: cached.fetched_at,
-                stale: false,
-                error: None,
-                items: cached.items.clone(),
-            });
-        }
-    }
-
-    match fetch().await {
-        Ok(items) => {
-            let fetched_at = Utc::now();
-            let cached = Cached { fetched_at, items };
-            *slot.write().await = Some(cached.clone());
-            Ok(CachedResult {
-                fetched_at,
-                stale: false,
-                error: None,
-                items: cached.items,
-            })
-        }
-        Err(err) => {
-            eprintln!("{source:?} refresh failed: {}", err.diagnostic_message());
-            if let Some(cached) = cached {
+    async fn get_or_fetch<T, F, Fut>(
+        &self,
+        source: Source,
+        slot: &RwLock<Option<Cached<Vec<T>>>>,
+        ttl: Duration,
+        fetch: F,
+    ) -> Result<CachedResult<Vec<T>>>
+    where
+        T: Clone,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<Vec<T>>>,
+    {
+        let cached = slot.read().await.clone();
+        if let Some(cached) = cached.as_ref() {
+            let max_age = chrono::Duration::from_std(ttl).unwrap_or(chrono::Duration::MAX);
+            if Utc::now().signed_duration_since(cached.fetched_at) < max_age {
                 return Ok(CachedResult {
                     fetched_at: cached.fetched_at,
-                    stale: true,
-                    error: Some(err.public_message()),
-                    items: cached.items,
+                    stale: false,
+                    error: None,
+                    items: cached.items.clone(),
                 });
             }
+        }
 
-            Err(err)
+        match fetch().await {
+            Ok(items) => {
+                self.error_notifier.report_recovery(source).await;
+                let fetched_at = Utc::now();
+                let cached = Cached { fetched_at, items };
+                *slot.write().await = Some(cached.clone());
+                Ok(CachedResult {
+                    fetched_at,
+                    stale: false,
+                    error: None,
+                    items: cached.items,
+                })
+            }
+            Err(err) => {
+                self.error_notifier.report_failure(source, &err).await;
+                if let Some(cached) = cached {
+                    return Ok(CachedResult {
+                        fetched_at: cached.fetched_at,
+                        stale: true,
+                        error: Some(err.public_message()),
+                        items: cached.items,
+                    });
+                }
+
+                Err(err)
+            }
         }
     }
 }
@@ -402,11 +409,20 @@ mod tests {
     fn test_config() -> ServerConfig {
         ServerConfig {
             lastfm_api_key: "test".to_string(),
+            resend_api_key: "test".to_string(),
             lastfm_username: "wyattwtf".to_string(),
             letterboxd_rss_url: "https://letterboxd.example/rss".to_string(),
             goodreads_rss_url: "https://goodreads.example/rss".to_string(),
+            error_email_from: "wyatt.wtf <notifications@wyatt.wtf>".to_string(),
+            error_email_to: "owner@example.com".to_string(),
             upstream_timeout: Duration::from_secs(1),
         }
+    }
+
+    fn test_app_state() -> AppState {
+        let mut state = AppState::new(test_config()).unwrap();
+        state.error_notifier = state.error_notifier.clone().suppress_all();
+        state
     }
 
     fn test_state(
@@ -414,9 +430,8 @@ mod tests {
         goodreads_items: Vec<GoodreadsBookUpdate>,
         lastfm_items: Vec<LastfmTrack>,
     ) -> AppState {
+        let state = test_app_state();
         AppState {
-            config: Arc::new(test_config()),
-            client: reqwest::Client::new(),
             cache: Arc::new(ActivityCache {
                 letterboxd: RwLock::new(Some(Cached {
                     fetched_at: Utc::now(),
@@ -431,6 +446,7 @@ mod tests {
                     items: lastfm_items,
                 })),
             }),
+            ..state
         }
     }
 
@@ -515,11 +531,13 @@ mod tests {
             items: vec![1, 2, 3],
         }));
 
-        let result = get_or_fetch(Source::Lastfm, &cache, Duration::from_secs(60), || async {
-            Err(BackendError::MissingField("should not fetch"))
-        })
-        .await
-        .unwrap();
+        let state = test_app_state();
+        let result = state
+            .get_or_fetch(Source::Lastfm, &cache, Duration::from_secs(60), || async {
+                Err(BackendError::MissingField("should not fetch"))
+            })
+            .await
+            .unwrap();
 
         assert!(!result.stale);
         assert_eq!(result.items, vec![1, 2, 3]);
@@ -532,14 +550,16 @@ mod tests {
             items: vec![1, 2, 3],
         }));
 
-        let result = get_or_fetch(
-            Source::Goodreads,
-            &cache,
-            Duration::from_secs(60),
-            || async { Err(BackendError::MissingField("refresh")) },
-        )
-        .await
-        .unwrap();
+        let state = test_app_state();
+        let result = state
+            .get_or_fetch(
+                Source::Goodreads,
+                &cache,
+                Duration::from_secs(60),
+                || async { Err(BackendError::MissingField("refresh")) },
+            )
+            .await
+            .unwrap();
 
         assert!(result.stale);
         assert_eq!(result.items, vec![1, 2, 3]);
@@ -553,13 +573,15 @@ mod tests {
     async fn returns_original_error_when_refresh_fails_without_cached_data() {
         let cache = RwLock::<Option<Cached<Vec<usize>>>>::new(None);
 
-        let result = get_or_fetch(
-            Source::Goodreads,
-            &cache,
-            Duration::from_secs(60),
-            || async { Err(BackendError::MissingField("test field")) },
-        )
-        .await;
+        let state = test_app_state();
+        let result = state
+            .get_or_fetch(
+                Source::Goodreads,
+                &cache,
+                Duration::from_secs(60),
+                || async { Err(BackendError::MissingField("test field")) },
+            )
+            .await;
 
         assert!(matches!(
             result,
@@ -581,7 +603,7 @@ mod tests {
                 .unwrap();
             String::from_utf8_lossy(&buffer[..read]).into_owned()
         });
-        let state = AppState::new(test_config()).unwrap();
+        let state = test_app_state();
 
         state
             .client
