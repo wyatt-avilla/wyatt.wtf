@@ -28,8 +28,6 @@ pub enum BackendError {
     Url(#[from] url::ParseError),
     #[error("upstream data is missing {0}")]
     MissingField(&'static str),
-    #[error("no cached data is available after refresh failed")]
-    NoCachedData,
     #[error("failed to build HTTP client: {0}")]
     ClientBuild(#[source] reqwest::Error),
 }
@@ -53,8 +51,15 @@ impl BackendError {
             Self::Xml(_) | Self::Json(_) | Self::Date(_) | Self::Url(_) | Self::MissingField(_) => {
                 "upstream response could not be parsed".to_string()
             }
-            Self::NoCachedData => "no cached data is available after refresh failed".to_string(),
             Self::ClientBuild(_) => "failed to build HTTP client".to_string(),
+        }
+    }
+
+    #[must_use]
+    pub fn diagnostic_message(&self) -> String {
+        match self {
+            Self::Request(err) => diagnostic_request_error(err),
+            _ => self.to_string(),
         }
     }
 }
@@ -66,7 +71,7 @@ impl IntoResponse for BackendError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::ClientBuild(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::NoCachedData | Self::Request(_) => StatusCode::BAD_GATEWAY,
+            Self::Request(_) => StatusCode::BAD_GATEWAY,
             Self::Xml(_) | Self::Json(_) | Self::Date(_) | Self::Url(_) | Self::MissingField(_) => {
                 StatusCode::BAD_GATEWAY
             }
@@ -87,6 +92,36 @@ fn public_request_error(err: &reqwest::Error) -> String {
     } else {
         "upstream request failed".to_string()
     }
+}
+
+fn diagnostic_request_error(err: &reqwest::Error) -> String {
+    let kind = if err.is_timeout() {
+        "timed out"
+    } else if err.is_connect() {
+        "connection failed"
+    } else if err.is_status() {
+        "returned an error status"
+    } else if err.is_body() {
+        "response body failed"
+    } else if err.is_decode() {
+        "response decoding failed"
+    } else if err.is_request() {
+        "request construction failed"
+    } else {
+        "request failed"
+    };
+    let status = err
+        .status()
+        .map(|status| format!(" with status {status}"))
+        .unwrap_or_default();
+    let url = err.url().map_or_else(String::new, |url| {
+        let mut redacted = url.clone();
+        redacted.set_query(None);
+        redacted.set_fragment(None);
+        format!(" for {redacted}")
+    });
+
+    format!("upstream {kind}{status}{url}")
 }
 
 #[cfg(test)]
@@ -126,5 +161,38 @@ mod tests {
         assert_eq!(message, "upstream request failed with status 500");
         assert!(!message.contains("secret"));
         assert!(!message.contains("key="));
+    }
+
+    #[tokio::test]
+    async fn request_diagnostic_includes_details_but_not_query_parameters() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 1024];
+            let _ = socket.read(&mut buffer).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .unwrap();
+        });
+
+        let err = reqwest::Client::new()
+            .get(format!("http://{addr}/feed?key=secret#fragment"))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap_err();
+        server.await.unwrap();
+
+        let message = BackendError::Request(err).diagnostic_message();
+
+        assert!(message.contains("403 Forbidden"));
+        assert!(message.contains(&format!("http://{addr}/feed")));
+        assert!(!message.contains("secret"));
+        assert!(!message.contains("key="));
+        assert!(!message.contains("fragment"));
     }
 }

@@ -37,6 +37,12 @@ impl AppState {
     pub fn new(config: ServerConfig) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(config.upstream_timeout)
+            .user_agent(concat!(
+                env!("CARGO_PKG_NAME"),
+                "/",
+                env!("CARGO_PKG_VERSION"),
+                " (+https://wyatt.wtf)"
+            ))
             .build()
             .map_err(BackendError::ClientBuild)?;
 
@@ -237,21 +243,31 @@ impl AppState {
     }
 
     async fn letterboxd(&self) -> Result<CachedResult<Vec<LetterboxdWatch>>> {
-        get_or_fetch(&self.cache.letterboxd, RSS_TTL, || async {
-            sources::fetch_letterboxd(&self.client, &self.config.letterboxd_rss_url).await
-        })
+        get_or_fetch(
+            Source::Letterboxd,
+            &self.cache.letterboxd,
+            RSS_TTL,
+            || async {
+                sources::fetch_letterboxd(&self.client, &self.config.letterboxd_rss_url).await
+            },
+        )
         .await
     }
 
     async fn goodreads(&self) -> Result<CachedResult<Vec<GoodreadsBookUpdate>>> {
-        get_or_fetch(&self.cache.goodreads, RSS_TTL, || async {
-            sources::fetch_goodreads(&self.client, &self.config.goodreads_rss_url).await
-        })
+        get_or_fetch(
+            Source::Goodreads,
+            &self.cache.goodreads,
+            RSS_TTL,
+            || async {
+                sources::fetch_goodreads(&self.client, &self.config.goodreads_rss_url).await
+            },
+        )
         .await
     }
 
     async fn lastfm(&self) -> Result<CachedResult<Vec<LastfmTrack>>> {
-        get_or_fetch(&self.cache.lastfm, LASTFM_TTL, || async {
+        get_or_fetch(Source::Lastfm, &self.cache.lastfm, LASTFM_TTL, || async {
             sources::fetch_lastfm(
                 &self.client,
                 &self.config.lastfm_username,
@@ -264,6 +280,7 @@ impl AppState {
 }
 
 async fn get_or_fetch<T, F, Fut>(
+    source: Source,
     slot: &RwLock<Option<Cached<Vec<T>>>>,
     ttl: Duration,
     fetch: F,
@@ -299,6 +316,7 @@ where
             })
         }
         Err(err) => {
+            eprintln!("{source:?} refresh failed: {}", err.diagnostic_message());
             if let Some(cached) = cached {
                 return Ok(CachedResult {
                     fetched_at: cached.fetched_at,
@@ -308,7 +326,7 @@ where
                 });
             }
 
-            Err(BackendError::NoCachedData)
+            Err(err)
         }
     }
 }
@@ -376,6 +394,20 @@ fn lastfm_activity(item: LastfmTrack, fetched_at: DateTime<Utc>) -> Activity {
 mod tests {
     use super::*;
     use crate::models::GoodreadsAction;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    fn test_config() -> ServerConfig {
+        ServerConfig {
+            lastfm_api_key: "test".to_string(),
+            lastfm_username: "wyattwtf".to_string(),
+            letterboxd_rss_url: "https://letterboxd.example/rss".to_string(),
+            goodreads_rss_url: "https://goodreads.example/rss".to_string(),
+            upstream_timeout: Duration::from_secs(1),
+        }
+    }
 
     fn test_state(
         letterboxd_items: Vec<LetterboxdWatch>,
@@ -383,13 +415,7 @@ mod tests {
         lastfm_items: Vec<LastfmTrack>,
     ) -> AppState {
         AppState {
-            config: Arc::new(ServerConfig {
-                lastfm_api_key: "test".to_string(),
-                lastfm_username: "wyattwtf".to_string(),
-                letterboxd_rss_url: "https://letterboxd.example/rss".to_string(),
-                goodreads_rss_url: "https://goodreads.example/rss".to_string(),
-                upstream_timeout: Duration::from_secs(1),
-            }),
+            config: Arc::new(test_config()),
             client: reqwest::Client::new(),
             cache: Arc::new(ActivityCache {
                 letterboxd: RwLock::new(Some(Cached {
@@ -489,7 +515,7 @@ mod tests {
             items: vec![1, 2, 3],
         }));
 
-        let result = get_or_fetch(&cache, Duration::from_secs(60), || async {
+        let result = get_or_fetch(Source::Lastfm, &cache, Duration::from_secs(60), || async {
             Err(BackendError::MissingField("should not fetch"))
         })
         .await
@@ -506,9 +532,12 @@ mod tests {
             items: vec![1, 2, 3],
         }));
 
-        let result = get_or_fetch(&cache, Duration::from_secs(60), || async {
-            Err(BackendError::MissingField("refresh"))
-        })
+        let result = get_or_fetch(
+            Source::Goodreads,
+            &cache,
+            Duration::from_secs(60),
+            || async { Err(BackendError::MissingField("refresh")) },
+        )
         .await
         .unwrap();
 
@@ -518,6 +547,59 @@ mod tests {
             result.error.as_deref(),
             Some("upstream response could not be parsed")
         );
+    }
+
+    #[tokio::test]
+    async fn returns_original_error_when_refresh_fails_without_cached_data() {
+        let cache = RwLock::<Option<Cached<Vec<usize>>>>::new(None);
+
+        let result = get_or_fetch(
+            Source::Goodreads,
+            &cache,
+            Duration::from_secs(60),
+            || async { Err(BackendError::MissingField("test field")) },
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(BackendError::MissingField("test field"))
+        ));
+    }
+
+    #[tokio::test]
+    async fn upstream_client_sends_site_user_agent() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 1024];
+            let read = socket.read(&mut buffer).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&buffer[..read]).into_owned()
+        });
+        let state = AppState::new(test_config()).unwrap();
+
+        state
+            .client
+            .get(format!("http://{addr}/"))
+            .send()
+            .await
+            .unwrap();
+        let request = server.await.unwrap();
+
+        assert!(request.lines().any(|line| {
+            line.eq_ignore_ascii_case(concat!(
+                "user-agent: ",
+                env!("CARGO_PKG_NAME"),
+                "/",
+                env!("CARGO_PKG_VERSION"),
+                " (+https://wyatt.wtf)"
+            ))
+        }));
     }
 
     #[test]
