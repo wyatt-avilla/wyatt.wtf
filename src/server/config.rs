@@ -16,6 +16,9 @@ pub struct Cli {
     pub lastfm_api_key_path: PathBuf,
 
     #[arg(long, value_name = "PATH")]
+    pub resend_api_key_path: PathBuf,
+
+    #[arg(long, value_name = "PATH")]
     pub goodreads_rss_url_path: PathBuf,
 
     #[arg(long, default_value = "wyattwtf")]
@@ -24,6 +27,12 @@ pub struct Cli {
     #[arg(long, default_value = "https://letterboxd.com/wyattwtf/rss/")]
     pub letterboxd_rss_url: String,
 
+    #[arg(long, default_value = "wyatt.wtf <notifications@wyatt.wtf>")]
+    pub error_email_from: String,
+
+    #[arg(long, default_value = "wyatt@linux.com")]
+    pub error_email_to: String,
+
     #[arg(long, default_value_t = NonZeroU64::new(10).expect("non-zero default"))]
     pub upstream_timeout_seconds: NonZeroU64,
 }
@@ -31,9 +40,12 @@ pub struct Cli {
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub lastfm_api_key: String,
+    pub resend_api_key: String,
     pub lastfm_username: String,
     pub letterboxd_rss_url: String,
     pub goodreads_rss_url: String,
+    pub error_email_from: String,
+    pub error_email_to: String,
     pub upstream_timeout: Duration,
 }
 
@@ -43,9 +55,12 @@ impl TryFrom<Cli> for ServerConfig {
     fn try_from(cli: Cli) -> Result<Self> {
         Ok(Self {
             lastfm_api_key: read_lastfm_api_key(&cli.lastfm_api_key_path)?,
+            resend_api_key: read_resend_api_key(&cli.resend_api_key_path)?,
             lastfm_username: cli.lastfm_username,
             letterboxd_rss_url: cli.letterboxd_rss_url,
             goodreads_rss_url: read_goodreads_rss_url(&cli.goodreads_rss_url_path)?,
+            error_email_from: cli.error_email_from,
+            error_email_to: cli.error_email_to,
             upstream_timeout: Duration::from_secs(cli.upstream_timeout_seconds.get()),
         })
     }
@@ -54,6 +69,14 @@ impl TryFrom<Cli> for ServerConfig {
 fn read_lastfm_api_key(path: &Path) -> Result<String> {
     read_secret_file(path, "Last.fm API key").map(|value| {
         dotenv_value(&value, "LASTFM_API_KEY")
+            .unwrap_or(&value)
+            .to_string()
+    })
+}
+
+fn read_resend_api_key(path: &Path) -> Result<String> {
+    read_secret_file(path, "Resend API key").map(|value| {
+        dotenv_value(&value, "RESEND_API_KEY")
             .unwrap_or(&value)
             .to_string()
     })
@@ -136,6 +159,18 @@ mod tests {
 
         fs::remove_file(path).unwrap();
         assert_eq!(secret, "key-from-env");
+    }
+
+    #[test]
+    fn accepts_dotenv_style_resend_key_file() {
+        let path =
+            std::env::temp_dir().join(format!("wyattwtf-resend-env-secret-{}", std::process::id()));
+        fs::write(&path, "RESEND_API_KEY=resend-key-from-env\n").unwrap();
+
+        let secret = read_resend_api_key(&path).unwrap();
+
+        fs::remove_file(path).unwrap();
+        assert_eq!(secret, "resend-key-from-env");
     }
 
     #[test]

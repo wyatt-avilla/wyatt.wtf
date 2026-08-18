@@ -1,5 +1,6 @@
 pub mod config;
 mod error;
+mod notifications;
 mod routes;
 mod sources;
 
