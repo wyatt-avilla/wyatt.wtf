@@ -21,7 +21,7 @@ use super::{
 };
 
 const LASTFM_TTL: Duration = Duration::from_secs(60);
-const RSS_TTL: Duration = Duration::from_secs(60 * 60);
+const RSS_TTL: Duration = Duration::from_hours(1);
 const SOURCE_LIMIT_MAX: usize = 50;
 const ACTIVITY_LIMIT_MAX: usize = 100;
 const ACTIVITY_SOURCE_COUNT: usize = 3;
@@ -231,7 +231,7 @@ impl AppState {
             }),
         }
 
-        items.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
+        items.sort_by_key(|item| std::cmp::Reverse(item.occurred_at));
         items.truncate(limit);
 
         ActivityFeed {
